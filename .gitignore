@@ -1,0 +1,10 @@
+target
+.idea
+*.iml
+*.log
+
+# VarSeq tarball is a 380 MB build artifact. Stage manually before
+# building dockerfile-gh-varseq-bake. The production VarSeq image
+# (varseq/server/build/build.mjs) downloads from the proxy and doesn't
+# need this file.
+src/varseq/varseq.tar.gz

@@ -1,0 +1,72 @@
+ARG BASE_IMAGE="registry.goldenhelix.com/public/ghdesktop-office-web-noble"
+ARG BASE_TAG="latest"
+FROM ${BASE_IMAGE}:${BASE_TAG} AS base_layer
+
+USER root
+
+ENV STARTUPDIR=/dockerstartup
+ENV INST_SCRIPTS=$STARTUPDIR/install
+WORKDIR $HOME
+
+######### Customize Container Here ###########
+
+ARG VS_VERSION="3.1.0-DEV5"
+
+# Bake the VarSeq tarball directly into the image rather than
+# downloading at build time. Stage it at src/varseq/varseq.tar.gz
+# before running build-* (see build-varseq-* scripts).
+COPY src/varseq/varseq.tar.gz /tmp/varseq.tar.gz
+RUN mkdir -p /opt/VarSeq && \
+    tar -xf /tmp/varseq.tar.gz --strip-components=1 -C /opt/VarSeq && \
+    rm -f /tmp/varseq.tar.gz && \
+    ln -sf /home/ghuser/Workspace/AppData /opt/VarSeq/AppData
+
+# .desktop entry. Generated inline rather than fetched from
+# goldenhelix.com so the image remains buildable offline.
+RUN cat > /usr/share/applications/varseq.desktop <<EOF
+[Desktop Entry]
+Version=1.0
+Name=VarSeq ${VS_VERSION}
+Comment=Golden Helix VarSeq
+TryExec=/opt/VarSeq/VarSeq
+Exec=/opt/VarSeq/VarSeq -- %u
+Icon=/opt/VarSeq/varseq_icon.png
+Terminal=false
+StartupWMClass=VarSeqDesktop
+Type=Application
+Categories=Analysis;Bioinformatics;Genomics;Sequencing;
+MimeType=x-scheme-handler/tg;
+Keywords=analysis;bioinformatics;genomics;sequencing;varseq;
+EOF
+RUN chmod +x /usr/share/applications/varseq.desktop && \
+    cp /usr/share/applications/varseq.desktop $HOME/Desktop/varseq.desktop && \
+    chmod +x $HOME/Desktop/varseq.desktop && \
+    chown 1000:1000 $HOME/Desktop/varseq.desktop
+
+# If the bundle includes an icon, expose it; otherwise fall back to a
+# placeholder so the .desktop doesn't break.
+RUN if [ -f /opt/VarSeq/varseq_icon.png ]; then \
+        :; \
+    elif [ -f /opt/VarSeq/varseq.png ]; then \
+        ln -sf /opt/VarSeq/varseq.png /opt/VarSeq/varseq_icon.png; \
+    else \
+        cp /usr/share/icons/hicolor/48x48/apps/utilities-system-monitor.png /opt/VarSeq/varseq_icon.png 2>/dev/null || true; \
+    fi
+
+# Bake into the panel launcher slot reserved for VarSeq (matches the
+# layout in our gh xfce4 panel config).
+RUN cp /usr/share/applications/varseq.desktop $HOME/.config/xfce4/panel/launcher-5/17306804705.desktop && \
+    chmod +x $HOME/.config/xfce4/panel/launcher-5/17306804705.desktop
+
+# Avoid fontconfig errors on first launch (VarSeq writes to .cache).
+ENV XDG_CACHE_HOME=/tmp/.cache
+
+######### End Customizations ###########
+
+RUN chown 1000:0 $HOME && chown -R 1000:0 /opt/VarSeq
+
+ENV HOME=/home/ghuser
+WORKDIR $HOME
+RUN mkdir -p $HOME && chown -R 1000:0 $HOME && mkdir -p /w && chown -R 1000:0 /w
+
+USER 1000

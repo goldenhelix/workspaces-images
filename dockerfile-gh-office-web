@@ -1,0 +1,72 @@
+ARG BASE_IMAGE="registry.goldenhelix.com/public/ghdesktop-core-noble"
+ARG BASE_TAG="latest"
+FROM ${BASE_IMAGE}:$BASE_TAG
+USER root
+
+ENV STARTUPDIR=/dockerstartup
+ENV INST_SCRIPTS=$STARTUPDIR/install
+WORKDIR $HOME
+
+######### Customize Container Here ###########
+
+# Upstream's noble core image strips curl/sudo during cleanup. The
+# only_office / chromium installers below shell out to both, so
+# put them back.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates sudo
+
+# Install Only Office
+COPY ./src/ubuntu/install/only_office $INST_SCRIPTS/only_office/
+RUN bash $INST_SCRIPTS/only_office/install_only_office.sh  && rm -rf $INST_SCRIPTS/only_office/
+
+# Install Chromium
+COPY ./src/ubuntu/install/chromium $INST_SCRIPTS/chromium/
+RUN bash $INST_SCRIPTS/chromium/install_chromium.sh && rm -rf $INST_SCRIPTS/chromium/
+
+# Install VSCode
+COPY ./src/ubuntu/install/vs_code $INST_SCRIPTS/vs_code/
+RUN bash $INST_SCRIPTS/vs_code/install_vs_code.sh && rm -rf $INST_SCRIPTS/vs_code/
+
+# The core image has the following app launching shortcuts as part of the panel (in this order)
+# 17306765011.desktop (web browser)
+# 17306804393.desktop (office)
+# 17306804534.desktop (terminal)
+# 17306804705.desktop (reserved for varseq)
+# 17306804756.desktop (vscode)
+RUN cp /usr/share/applications/chromium.desktop .config/xfce4/panel/launcher-5/17306765011.desktop
+RUN cp /usr/share/applications/onlyoffice-desktopeditors.desktop .config/xfce4/panel/launcher-5/17306804393.desktop
+RUN cp /usr/share/applications/code.desktop .config/xfce4/panel/launcher-5/17306804756.desktop
+
+# XFCE 4.18+ refuses to launch a panel/desktop .desktop unless it's
+# either marked executable or carries a metadata::xfce-exe-checksum
+# matching the file content. The chmod handles the file-mode check at
+# build time. The gvfs-metadata is per-user runtime state, so it can't
+# be baked in here — see src/gh/vnc_startup.sh which seeds the
+# checksum on first session start so the user never sees the
+# "Untrusted application launcher" dialog.
+RUN chmod +x .config/xfce4/panel/launcher-5/*.desktop \
+        $HOME/Desktop/*.desktop 2>/dev/null || true
+
+# Stop VSCode from prompting to create a "Default keyring" on first
+# launch. password-store=basic uses an encrypted file under the user
+# config dir instead of libsecret/gnome-keyring (same workaround
+# chromium uses with --password-store=basic). Has to be in the
+# user-level argv.json since VSCode reads this before any args.
+RUN mkdir -p $HOME/.vscode \
+    && echo '{"password-store": "basic"}' > $HOME/.vscode/argv.json
+
+# The chromium / vs_code / only_office install scripts all do
+# `find /usr/share -name icon-theme.cache -delete` as part of their
+# cleanup, which nukes the elementary-xfce cache the core image just
+# generated. Regenerate it for elementary-xfce + hicolor here.
+RUN gtk-update-icon-cache -f /usr/share/icons/elementary-xfce 2>/dev/null || true && \
+    gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+
+######### End Customizations ###########
+
+RUN chown 1000:0 $HOME
+
+ENV HOME=/home/ghuser
+WORKDIR $HOME
+RUN mkdir -p $HOME && chown -R 1000:0 $HOME
+
+USER 1000
