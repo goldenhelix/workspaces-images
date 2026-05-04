@@ -22,6 +22,27 @@ RUN bash $INST_SCRIPTS/only_office/install_only_office.sh  && rm -rf $INST_SCRIP
 COPY ./src/ubuntu/install/chromium $INST_SCRIPTS/chromium/
 RUN bash $INST_SCRIPTS/chromium/install_chromium.sh && rm -rf $INST_SCRIPTS/chromium/
 
+# Seed the ghuser Chromium profile so xfwm4 draws the window frame
+# (same 4px white border + click target as every other window). Without
+# this seed Chromium uses CSD with a near-invisible border that's
+# almost impossible to grab-resize through KasmVNC.
+#
+# Note: /etc/chromium/master_preferences would be the "right" place,
+# but Chromium's master_preferences→profile copy whitelist doesn't
+# include `browser.custom_chrome_frame` — the value silently drops on
+# first launch. Pre-writing the user profile Preferences works because
+# Chromium reads existing profile prefs verbatim and only fills in
+# defaults for missing keys.
+#
+# `system_theme=0` (kDefault) means "auto-detect"; the setting that
+# actually controls GTK vs system frame on Linux is custom_chrome_frame.
+RUN install -d -o 1000 -g 1000 /home/ghuser/.config/chromium/Default && \
+    python3 -c "import json; json.dump({\
+'browser': {'custom_chrome_frame': False}, \
+'extensions': {'theme': {'system_theme': 0}}\
+}, open('/home/ghuser/.config/chromium/Default/Preferences', 'w'), indent=2)" && \
+    chown -R 1000:1000 /home/ghuser/.config/chromium
+
 # Install VSCode
 COPY ./src/ubuntu/install/vs_code $INST_SCRIPTS/vs_code/
 RUN bash $INST_SCRIPTS/vs_code/install_vs_code.sh && rm -rf $INST_SCRIPTS/vs_code/
