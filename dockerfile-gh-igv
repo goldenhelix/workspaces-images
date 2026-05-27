@@ -1,0 +1,47 @@
+ARG BASE_IMAGE="registry.goldenhelix.com/public/ghdesktop-office-web"
+ARG BASE_TAG="latest"
+FROM ${BASE_IMAGE}:$BASE_TAG AS base_layer
+
+USER root
+
+ENV STARTUPDIR=/dockerstartup
+WORKDIR $HOME
+
+# IGV 2.x version. The 2.x line is maintained alongside 3.x for users who
+# need the legacy UI — see dockerfile-gh-igv3 for the IGV 3 image. Note
+# that 2.19+ ships the bundled JDK at jdk-21/ (not java/ as in 2.16).
+ARG IGV_VERSION=2.19.7
+ARG IGV_MAJOR_MINOR=2.19
+ENV IGV_VERSION=${IGV_VERSION}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install IGV Linux bundle with bundled Java. igv.sh resolves ${prefix}/java
+# itself, so no separate JRE is required.
+RUN mkdir -p /opt/igv \
+    && curl -L "https://data.broadinstitute.org/igv/projects/downloads/${IGV_MAJOR_MINOR}/IGV_Linux_${IGV_VERSION}_WithJava.zip" -o /tmp/igv.zip \
+    && unzip /tmp/igv.zip -d /tmp \
+    && rm /tmp/igv.zip \
+    && mv "/tmp/IGV_Linux_${IGV_VERSION}"/* /opt/igv/ \
+    && rmdir "/tmp/IGV_Linux_${IGV_VERSION}" \
+    && chmod +x /opt/igv/igv.sh
+
+# Expose the bundled JDK on PATH for any tooling that shells out to `java`.
+ENV PATH="/opt/igv/jdk-21/bin:${PATH}"
+
+COPY ./src/gh/install/igv_custom_startup.sh $STARTUPDIR/custom_startup.sh
+RUN chmod +x $STARTUPDIR/custom_startup.sh \
+    && chmod 755 $STARTUPDIR/custom_startup.sh
+
+# Clear this if you don't want to shutdown the container when IGV exits
+ENV MONITOR_PROCESS=1
+
+RUN chown 1000:0 $HOME
+
+ENV HOME=/home/ghuser
+WORKDIR $HOME
+RUN mkdir -p $HOME && chown -R 1000:0 $HOME
+
+USER 1000
