@@ -1,0 +1,79 @@
+ARG BASE_IMAGE="registry.goldenhelix.com/public/ghdesktop-varseq"
+ARG BASE_TAG="3.0.1"
+FROM ${BASE_IMAGE}:${BASE_TAG} AS base_layer
+
+USER root
+
+ENV STARTUPDIR=/dockerstartup
+WORKDIR $HOME
+
+# VarSeq's custom_startup.sh in the base image is the default launcher
+# (it execs /opt/VarSeq/VarSeq and monitors VarSeq.bin). We deliberately
+# do NOT touch it — IGV is added as a regular installed app, reachable
+# from the Desktop icon and via the XFCE app finder.
+
+# IGV 3 (currently 3.0.0-beta.1). IGV 3 is what the varseq+igv image
+# ships — for the legacy 2.x line, use dockerfile-gh-igv.
+ARG IGV_VERSION=3.0.0-beta.1
+ARG IGV_MAJOR_MINOR=3.0
+ENV IGV_VERSION=${IGV_VERSION}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install IGV with bundled JDK; igv.sh self-resolves ${prefix}/jdk-21,
+# so no separate JRE is required.
+RUN mkdir -p /opt/igv \
+    && curl -L "https://data.broadinstitute.org/igv/projects/downloads/${IGV_MAJOR_MINOR}/IGV_Linux_${IGV_VERSION}_WithJava.zip" -o /tmp/igv.zip \
+    && unzip /tmp/igv.zip -d /tmp \
+    && rm /tmp/igv.zip \
+    && mv "/tmp/IGV_Linux_${IGV_VERSION}"/* /opt/igv/ \
+    && rmdir "/tmp/IGV_Linux_${IGV_VERSION}" \
+    && chmod +x /opt/igv/igv.sh
+
+# Pull the bundled 64×64 IGV icon out of igv.jar so the .desktop entry
+# has a real icon instead of a generic placeholder. IGV 2.x ships it at
+# org/broad/igv/ui/resources/, IGV 3.x at org/igv/ui/resources/ — the
+# wildcard covers both.
+RUN unzip -j -o /opt/igv/lib/igv.jar '*/IGV_64.png' -d /opt/igv/ \
+    && mv /opt/igv/IGV_64.png /opt/igv/igv_icon.png
+
+# .desktop entry. Same inline-generation pattern as varseq.desktop in the
+# base image — keeps the build offline-buildable.
+RUN cat > /usr/share/applications/igv.desktop <<EOF
+[Desktop Entry]
+Version=1.0
+Name=IGV ${IGV_VERSION}
+Comment=Integrative Genomics Viewer
+TryExec=/opt/igv/igv.sh
+Exec=/opt/igv/igv.sh %u
+Icon=/opt/igv/igv_icon.png
+Terminal=false
+Type=Application
+Categories=Science;Biology;Bioinformatics;
+Keywords=igv;genomics;viewer;sequencing;
+EOF
+RUN chmod +x /usr/share/applications/igv.desktop && \
+    cp /usr/share/applications/igv.desktop $HOME/Desktop/igv.desktop && \
+    chmod +x $HOME/Desktop/igv.desktop && \
+    chown 1000:1000 $HOME/Desktop/igv.desktop
+
+# Replace the chromium launcher in the panel row with IGV. Slot
+# 17306765011 is the first launcher in the gh xfce4 panel layout (the
+# panel xml references entries by filename, so we overwrite in place
+# rather than adding a new slot). For varseq+IGV users a genomics
+# viewer is more useful on the panel than a browser.
+RUN cp /usr/share/applications/igv.desktop $HOME/.config/xfce4/panel/launcher-5/17306765011.desktop && \
+    chmod +x $HOME/.config/xfce4/panel/launcher-5/17306765011.desktop && \
+    chown 1000:1000 $HOME/.config/xfce4/panel/launcher-5/17306765011.desktop
+
+# The base's custom_startup.sh already runs the gio xfce-exe-checksum
+# loop over $HOME/Desktop/*.desktop on session start, so the new icon
+# will be trusted without further work.
+
+RUN chown -R 1000:0 /opt/igv
+
+ENV HOME=/home/ghuser
+WORKDIR $HOME
+USER 1000
