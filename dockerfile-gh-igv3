@@ -1,0 +1,46 @@
+ARG BASE_IMAGE="registry.goldenhelix.com/public/ghdesktop-office-web"
+ARG BASE_TAG="latest"
+FROM ${BASE_IMAGE}:$BASE_TAG AS base_layer
+
+USER root
+
+ENV STARTUPDIR=/dockerstartup
+WORKDIR $HOME
+
+# IGV version to install. Bumping this is the only edit needed to roll forward.
+# Major IGV3 layout used here (jdk-21 alongside igv.sh) was introduced in 3.0;
+# do not point this at a 2.x release.
+ARG IGV_VERSION=3.0.0-beta.1
+ENV IGV_VERSION=${IGV_VERSION}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install IGV Linux bundle with bundled Eclipse Temurin JDK 21.
+# No separate JRE is required — igv.sh resolves ${prefix}/jdk-21 itself.
+RUN mkdir -p /opt/igv \
+    && curl -L "https://data.broadinstitute.org/igv/projects/downloads/3.0/IGV_Linux_${IGV_VERSION}_WithJava.zip" -o /tmp/igv.zip \
+    && unzip /tmp/igv.zip -d /tmp \
+    && rm /tmp/igv.zip \
+    && mv "/tmp/IGV_Linux_${IGV_VERSION}"/* /opt/igv/ \
+    && rmdir "/tmp/IGV_Linux_${IGV_VERSION}" \
+    && chmod +x /opt/igv/igv.sh /opt/igv/igv_hidpi.sh
+
+# Expose the bundled JDK on PATH for any tooling that shells out to `java`.
+ENV PATH="/opt/igv/jdk-21/bin:${PATH}"
+
+COPY ./src/gh/install/igv_custom_startup.sh $STARTUPDIR/custom_startup.sh
+RUN chmod +x $STARTUPDIR/custom_startup.sh \
+    && chmod 755 $STARTUPDIR/custom_startup.sh
+
+# Clear this if you don't want to shutdown the container when IGV exits
+ENV MONITOR_PROCESS=1
+
+RUN chown 1000:0 $HOME
+
+ENV HOME=/home/ghuser
+WORKDIR $HOME
+RUN mkdir -p $HOME && chown -R 1000:0 $HOME
+
+USER 1000
