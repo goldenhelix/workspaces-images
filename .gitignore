@@ -8,3 +8,8 @@ target
 # (varseq/server/build/build.mjs) downloads from the proxy and doesn't
 # need this file.
 src/varseq/varseq.tar.gz
+
+# Written by build-trixie.sh as the date suffix of the latest successful
+# office-web build (e.g. 260519). Read by build-varseq-trixie.sh to pin
+# a specific office-web tag.
+LAST_BUILD.tag
