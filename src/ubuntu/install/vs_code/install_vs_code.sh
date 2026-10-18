@@ -8,11 +8,18 @@ apt-get update
 apt-get install -y ./vs_code.deb
 
 # Desktop icon
+# VS Code 1.142 renamed its launcher from code.desktop to the reverse-DNS
+# com.microsoft.VSCode.desktop; accept either. The Desktop copy keeps the
+# stable name code.desktop, which the image dockerfiles copy from.
+DESKTOP_FILE=/usr/share/applications/code.desktop
+if [ ! -f "$DESKTOP_FILE" ]; then
+  DESKTOP_FILE=/usr/share/applications/com.microsoft.VSCode.desktop
+fi
 mkdir -p /usr/share/icons/hicolor/apps
 wget -O /usr/share/icons/hicolor/apps/vscode.svg https://kasm-static-content.s3.amazonaws.com/icons/vscode.svg
-sed -i '/Icon=/c\Icon=/usr/share/icons/hicolor/apps/vscode.svg' /usr/share/applications/code.desktop
-sed -i 's#/usr/share/code/code#/usr/share/code/code --no-sandbox##' /usr/share/applications/code.desktop
-cp /usr/share/applications/code.desktop $HOME/Desktop
+sed -i '/Icon=/c\Icon=/usr/share/icons/hicolor/apps/vscode.svg' "$DESKTOP_FILE"
+sed -i 's#/usr/share/code/code#/usr/share/code/code --no-sandbox##' "$DESKTOP_FILE"
+cp "$DESKTOP_FILE" $HOME/Desktop/code.desktop
 chmod +x $HOME/Desktop/code.desktop
 chown 1000:1000 $HOME/Desktop/code.desktop
 rm vs_code.deb
